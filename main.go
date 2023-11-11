@@ -140,4 +140,24 @@ func main() {
         keyFormat = strings.TrimSpace(keyFormat)
 
         fmt.Print("Enter the address prefix: ")
-        addressPrefix, err :=
+        addressPrefix, err := reader.ReadString('\n')
+        if err != nil {
+            fmt.Println("Error reading input:", err)
+            os.Exit(1)
+        }
+        addressPrefix = strings.TrimSpace(addressPrefix)
+
+        pubKeyBytes, err := decodePublicKeyString(publicKey, keyFormat)
+        if err != nil {
+            fmt.Println("Error decoding public key:", err)
+            os.Exit(1)
+        }
+        bech32address := PublicKeyToAddress(addressPrefix, pubKeyBytes)
+        fmt.Println(bech32address)
+
+    default:
+        fmt.Println("Invalid mode selected")
+        os.Exit(1)
+    }
+}
+
