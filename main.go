@@ -8,6 +8,7 @@ import (
     "fmt"
     "io/ioutil"
     "os"
+    "strings"
 
     "golang.org/x/crypto/ripemd160"
     "github.com/cosmos/btcutil/bech32"
