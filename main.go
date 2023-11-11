@@ -4,6 +4,7 @@ import (
     "bufio"
     "crypto/sha256"
     "encoding/base64"
+    "encoding/hex"
     "encoding/json"
     "fmt"
     "io/ioutil"
@@ -14,11 +15,8 @@ import (
     "github.com/cosmos/btcutil/bech32"
 )
 
-// PublicKeyToAddress converts secp256k1 public key to a bech32 Tendermint/Cosmos based address
-func PublicKeyToAddress(addressPrefix, publicKeyString string) string {
-    // Decode public key string
-    pubKeyBytes := decodePublicKeyString(publicKeyString)
-
+// PublicKeyToAddress converts a public key to a bech32 Tendermint/Cosmos based address
+func PublicKeyToAddress(addressPrefix string, pubKeyBytes []byte) string {
     // Hash pubKeyBytes as: RIPEMD160(SHA256(public_key_bytes))
     pubKeySha256Hash := sha256.Sum256(pubKeyBytes)
     ripemd160hash := ripemd160.New()
@@ -26,39 +24,48 @@ func PublicKeyToAddress(addressPrefix, publicKeyString string) string {
     addressBytes := ripemd160hash.Sum(nil)
 
     // Convert addressBytes into a bech32 string using the provided addressPrefix
-    address := toBech32(addressPrefix, addressBytes)
+    address, err := toBech32(addressPrefix, addressBytes)
+    if err != nil {
+        panic(err)
+    }
 
     return address
 }
 
-// Code courtesy: https://github.com/cosmos/cosmos-sdk/blob/90c9c9a9eb4676d05d3f4b89d9a907bd3db8194f/types/bech32/bech32.go#L10
-func toBech32(addrPrefix string, addrBytes []byte) string {
-	converted, err := bech32.ConvertBits(addrBytes, 8, 5, true)
-	if err != nil {
-		panic(err)
-	}
+// toBech32 converts a byte slice into a bech32 encoded string with the given prefix
+func toBech32(addrPrefix string, addrBytes []byte) (string, error) {
+    converted, err := bech32.ConvertBits(addrBytes, 8, 5, true)
+    if err != nil {
+        return "", err
+    }
 
-	addr, err := bech32.Encode(addrPrefix, converted)
-	if err != nil {
-		panic(err)
-	}
+    addr, err := bech32.Encode(addrPrefix, converted)
+    if err != nil {
+        return "", err
+    }
 
-	return addr
+    return addr, nil
 }
 
-// decodePublicKeyString decodes a base-64 encoded public key
-// into a Byte Array. The logic will differ for other string encodings
-func decodePublicKeyString(pubKey string) []byte {
-	pubKeyBytes, err := base64.StdEncoding.DecodeString(pubKey)
-	if err != nil {
-		panic(err)
-	}
+// decodePublicKeyString decodes a public key string into a byte slice based on the given format
+func decodePublicKeyString(pubKey string, format string) ([]byte, error) {
+    var pubKeyBytes []byte
+    var err error
 
-	return pubKeyBytes
+    switch format {
+    case "Ed25519":
+        pubKeyBytes, err = base64.StdEncoding.DecodeString(pubKey)
+    case "Secp256k1":
+        pubKeyBytes, err = hex.DecodeString(pubKey)
+    // Add cases for other formats as needed
+    default:
+        err = fmt.Errorf("unsupported public key format")
+    }
+
+    return pubKeyBytes, err
 }
 
-
-// JSONData structure to match the updated JSON file
+// JSONData structure to match the JSON file
 type JSONData struct {
     Result struct {
         Validators []struct {
@@ -73,41 +80,64 @@ type JSONData struct {
 func main() {
     reader := bufio.NewReader(os.Stdin)
 
-    fmt.Print("Enter the path to your JSON file: ")
-    jsonFilePath, err := reader.ReadString('\n')
+    fmt.Print("Choose operation mode (1 - Process JSON file, 2 - Convert single address): ")
+    mode, err := reader.ReadString('\n')
     if err != nil {
         fmt.Println("Error reading input:", err)
         os.Exit(1)
     }
-    jsonFilePath = strings.TrimSpace(jsonFilePath)
+    mode = strings.TrimSpace(mode)
 
-    fmt.Print("Enter the address prefix: ")
-    addressPrefix, err := reader.ReadString('\n')
-    if err != nil {
-        fmt.Println("Error reading input:", err)
-        os.Exit(1)
-    }
-    addressPrefix = strings.TrimSpace(addressPrefix)
+    switch mode {
+    case "1":
+        fmt.Print("Enter the path to your JSON file: ")
+        jsonFilePath, err := reader.ReadString('\n')
+        if err != nil {
+            fmt.Println("Error reading input:", err)
+            os.Exit(1)
+        }
+        jsonFilePath = strings.TrimSpace(jsonFilePath)
 
-    // Read JSON file
-    jsonData, err := ioutil.ReadFile(jsonFilePath)
-    if err != nil {
-        fmt.Println("Error reading JSON file:", err)
-        os.Exit(1)
-    }
+        jsonData, err := ioutil.ReadFile(jsonFilePath)
+        if err != nil {
+            fmt.Println("Error reading JSON file:", err)
+            os.Exit(1)
+        }
 
-    // Unmarshal JSON data
-    var data JSONData
-    err = json.Unmarshal(jsonData, &data)
-    if err != nil {
-        fmt.Println("Error unmarshalling JSON data:", err)
-        os.Exit(1)
-    }
+        var data JSONData
+        err = json.Unmarshal(jsonData, &data)
+        if err != nil {
+            fmt.Println("Error unmarshalling JSON data:", err)
+            os.Exit(1)
+        }
 
-    // Process each validator's public key
-    for _, validator := range data.Result.Validators {
-        pubKeyValue := validator.PubKey.Value
-        bech32address := PublicKeyToAddress(addressPrefix, pubKeyValue)
-        fmt.Println(bech32address)
-    }
-}
+        for _, validator := range data.Result.Validators {
+            pubKeyValue := validator.PubKey.Value
+            pubKeyBytes, err := decodePublicKeyString(pubKeyValue, "Ed25519") // Assuming Ed25519 format
+            if err != nil {
+                fmt.Println("Error decoding public key:", err)
+                continue
+            }
+            bech32address := PublicKeyToAddress("nomic", pubKeyBytes)
+            fmt.Println(bech32address)
+        }
+
+    case "2":
+        fmt.Print("Enter the public key: ")
+        publicKey, err := reader.ReadString('\n')
+        if err != nil {
+            fmt.Println("Error reading input:", err)
+            os.Exit(1)
+        }
+        publicKey = strings.TrimSpace(publicKey)
+
+        fmt.Print("Enter the public key format (Ed25519, Secp256k1, etc.): ")
+        keyFormat, err := reader.ReadString('\n')
+        if err != nil {
+            fmt.Println("Error reading input:", err)
+            os.Exit(1)
+        }
+        keyFormat = strings.TrimSpace(keyFormat)
+
+        fmt.Print("Enter the address prefix: ")
+        addressPrefix, err :=
