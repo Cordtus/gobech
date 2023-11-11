@@ -16,19 +16,19 @@ import (
 
 // PublicKeyToAddress converts secp256k1 public key to a bech32 Tendermint/Cosmos based address
 func PublicKeyToAddress(addressPrefix, publicKeyString string) string {
-	// Decode public key string
-	pubKeyBytes := decodePublicKeyString(publicKeyString)
+    // Decode public key string
+    pubKeyBytes := decodePublicKeyString(publicKeyString)
 
-	// Hash pubKeyBytes as: RIPEMD160(SHA256(public_key_bytes))
-	pubKeySha256Hash := sha256.Sum256(pubKeyBytes)
-	ripemd160hash := ripemd160.New()
-	ripemd160hash.Write(pubKeySha256Hash[:])
-	addressBytes := ripemd160hash.Sum(nil)
+    // Hash pubKeyBytes as: RIPEMD160(SHA256(public_key_bytes))
+    pubKeySha256Hash := sha256.Sum256(pubKeyBytes)
+    ripemd160hash := ripemd160.New()
+    ripemd160hash.Write(pubKeySha256Hash[:])
+    addressBytes := ripemd160hash.Sum(nil)
 
-	// Convert addressBytes into a bech32 string
-	address := toBech32("nomic", addressBytes)
+    // Convert addressBytes into a bech32 string using the provided addressPrefix
+    address := toBech32(addressPrefix, addressBytes)
 
-	return address
+    return address
 }
 
 // Code courtesy: https://github.com/cosmos/cosmos-sdk/blob/90c9c9a9eb4676d05d3f4b89d9a907bd3db8194f/types/bech32/bech32.go#L10
@@ -71,17 +71,23 @@ type JSONData struct {
 }
 
 func main() {
-    // Create a new reader, assuming stdin is a terminal
     reader := bufio.NewReader(os.Stdin)
+
     fmt.Print("Enter the path to your JSON file: ")
     jsonFilePath, err := reader.ReadString('\n')
     if err != nil {
         fmt.Println("Error reading input:", err)
         os.Exit(1)
     }
-
-    // Trim the newline character from the input
     jsonFilePath = strings.TrimSpace(jsonFilePath)
+
+    fmt.Print("Enter the address prefix: ")
+    addressPrefix, err := reader.ReadString('\n')
+    if err != nil {
+        fmt.Println("Error reading input:", err)
+        os.Exit(1)
+    }
+    addressPrefix = strings.TrimSpace(addressPrefix)
 
     // Read JSON file
     jsonData, err := ioutil.ReadFile(jsonFilePath)
@@ -101,7 +107,7 @@ func main() {
     // Process each validator's public key
     for _, validator := range data.Result.Validators {
         pubKeyValue := validator.PubKey.Value
-        bech32address := PublicKeyToAddress("nomic", pubKeyValue)
+        bech32address := PublicKeyToAddress(addressPrefix, pubKeyValue)
         fmt.Println(bech32address)
     }
 }
